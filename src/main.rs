@@ -1,15 +1,15 @@
-use std::{collections::HashMap, sync::Arc};
-
 use axum::{
     extract::{Path, State},
     http::StatusCode,
-    response::IntoResponse,
+    response::{IntoResponse, Json},
     routing::{get, post},
-    Json, Router,
+    Router,
 };
-
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
+use std::option::Option;
+use std::{collections::HashMap, sync::Arc};
 use time::{macros::date, Date};
+use tokio::sync::RwLock;
 use uuid::Uuid;
 
 time::serde::format_description!(date_format, Date, "[year]-[month]-[day]");
@@ -21,10 +21,19 @@ pub struct Person {
     pub nickname: String,
     #[serde(with = "date_format")]
     pub birthdate: Date,
-    pub stack: Vec<String>,
+    pub stack: Option<Vec<String>>,
 }
 
-type AppState = Arc<HashMap<Uuid, Person>>;
+#[derive(Clone, Deserialize)]
+pub struct NewPerson {
+    pub name: String,
+    pub nickname: String,
+    #[serde(with = "date_format")]
+    pub birthdate: Date,
+    pub stack: Option<Vec<String>>,
+}
+
+type AppState = Arc<RwLock<HashMap<Uuid, Person>>>;
 
 #[tokio::main]
 async fn main() {
@@ -35,12 +44,14 @@ async fn main() {
         name: String::from("Marcos Felipe"),
         nickname: String::from("marcosvieira"),
         birthdate: date!(1992 - 04 - 12),
-        stack: vec!["frontend".to_string(), "backend".to_string()],
+        stack: vec!["frontend".to_string(), "backend".to_string()].into(),
     };
+
+    println!("{}", person.id);
 
     people.insert(person.id, person);
 
-    let app_state: AppState = Arc::new(people);
+    let app_state: AppState = Arc::new(RwLock::new(people));
 
     // build our application with a single route
     let app = Router::new()
@@ -63,16 +74,31 @@ async fn get_person_by_id(
     State(people): State<AppState>,
     Path(person_id): Path<Uuid>,
 ) -> impl IntoResponse {
-    match people.get(&person_id) {
+    match people.read().await.get(&person_id) {
         Some(person) => Ok(Json(person.clone())),
         None => Err(StatusCode::NOT_FOUND),
     }
 }
 
-async fn create_person() -> impl IntoResponse {
-    (StatusCode::NOT_FOUND, "Create Person!")
+async fn create_person(
+    State(people): State<AppState>,
+    Json(new_person): Json<NewPerson>,
+) -> impl IntoResponse {
+    let id = Uuid::now_v7();
+
+    let person: Person = Person {
+        id,
+        name: new_person.name,
+        nickname: new_person.nickname,
+        birthdate: new_person.birthdate,
+        stack: new_person.stack,
+    };
+
+    people.write().await.insert(id, person.clone());
+    (StatusCode::OK, Json(person));
 }
 
-async fn count_people() -> impl IntoResponse {
-    (StatusCode::NOT_FOUND, "Count People!")
+async fn count_people(State(people): State<AppState>) -> impl IntoResponse {
+    let count = people.read().await.len();
+    (StatusCode::NOT_FOUND, Json(count));
 }
