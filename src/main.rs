@@ -84,6 +84,10 @@ async fn create_person(
     State(people): State<AppState>,
     Json(new_person): Json<NewPerson>,
 ) -> impl IntoResponse {
+    if new_person.name.len() > 100 || new_person.nickname.len() > 32 {
+        return Err(StatusCode::UNPROCESSABLE_ENTITY);
+    }
+
     let id = Uuid::now_v7();
 
     let person: Person = Person {
@@ -95,7 +99,8 @@ async fn create_person(
     };
 
     people.write().await.insert(id, person.clone());
-    (StatusCode::OK, Json(person));
+
+    Ok((StatusCode::OK, Json(person)))
 }
 
 async fn count_people(State(people): State<AppState>) -> impl IntoResponse {
