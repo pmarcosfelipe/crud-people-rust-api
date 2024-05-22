@@ -25,12 +25,66 @@ pub struct Person {
 }
 
 #[derive(Clone, Deserialize)]
+#[serde(try_from = "String")]
+pub struct Name(String);
+
+impl TryFrom<String> for Name {
+    type Error = &'static str;
+
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        if value.len() <= 100 {
+            Ok(Self(value))
+        } else {
+            Err("Name should contain less than 100 characters!")
+        }
+    }
+}
+
+#[derive(Clone, Deserialize)]
+#[serde(try_from = "String")]
+pub struct Nickname(String);
+
+impl TryFrom<String> for Nickname {
+    type Error = &'static str;
+
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        if value.len() <= 32 {
+            Ok(Self(value))
+        } else {
+            Err("Nickname should contain less than 32 characters!")
+        }
+    }
+}
+
+#[derive(Clone, Deserialize)]
+#[serde(try_from = "String")]
+pub struct Tech(String);
+
+impl TryFrom<String> for Tech {
+    type Error = &'static str;
+
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        if value.len() <= 32 {
+            Ok(Self(value))
+        } else {
+            Err("Each stack should contain less than 32 characters!")
+        }
+    }
+}
+
+impl From<Tech> for String {
+    fn from(value: Tech) -> Self {
+        value.0
+    }
+}
+
+#[derive(Clone, Deserialize)]
 pub struct NewPerson {
-    pub name: String,
-    pub nickname: String,
+    pub name: Name,
+    pub nickname: Nickname,
     #[serde(with = "date_format")]
     pub birthdate: Date,
-    pub stack: Option<Vec<String>>,
+    pub stack: Option<Vec<Tech>>,
 }
 
 type AppState = Arc<RwLock<HashMap<Uuid, Person>>>;
@@ -84,23 +138,21 @@ async fn create_person(
     State(people): State<AppState>,
     Json(new_person): Json<NewPerson>,
 ) -> impl IntoResponse {
-    if new_person.name.len() > 100 || new_person.nickname.len() > 32 {
-        return Err(StatusCode::UNPROCESSABLE_ENTITY);
-    }
-
     let id = Uuid::now_v7();
 
     let person: Person = Person {
         id,
-        name: new_person.name,
-        nickname: new_person.nickname,
+        name: new_person.name.0,
+        nickname: new_person.nickname.0,
         birthdate: new_person.birthdate,
-        stack: new_person.stack,
+        stack: new_person
+            .stack
+            .map(|stack| stack.into_iter().map(String::from).collect()),
     };
 
     people.write().await.insert(id, person.clone());
 
-    Ok((StatusCode::OK, Json(person)))
+    (StatusCode::OK, Json(person))
 }
 
 async fn count_people(State(people): State<AppState>) -> impl IntoResponse {
